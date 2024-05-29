@@ -31,31 +31,40 @@ var frameDelim = []byte{48, 48, 100, 99} // ASCII 00dc
 var iframePrefix = []byte{0, 1, 176} // hex 0x0001B0
 var pframePrefix = []byte{0, 1, 182} // hex 0x0001B6
 
-func frameDelimSplitFunc(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if atEOF && len(data) == 0 {
-		return 0, nil, nil
-	}
-
-	if i := bytes.Index(data, frameDelim); i >= 0 {
-		// we found the frame delimiter
-		end := i + len(frameDelim)
-		return end, data[:end], nil
-	}
-
-	return 0, nil, nil
+// AviFrameReader reads AVI frames from an io.Reader.
+type AviFrameReader struct {
+	bufReader *bufio.Reader
 }
 
-// AviScanner returns a Scanner that reads an AVI file frame-by-frame.
-func AviScanner(reader io.Reader) *bufio.Scanner {
-	r := bufio.NewScanner(reader)
-	r.Split(frameDelimSplitFunc)
+// NewAviFrameReader creates a new AviFrameReader.
+func NewAviFrameReader(reader io.Reader) *AviFrameReader {
+	return &AviFrameReader{
+		bufReader: bufio.NewReader(reader),
+	}
+}
 
-	// increase the maximum buffer size of the scanner
-	// to avoid "token too long" errors
-	buf := make([]byte, 0, 1024)
-	r.Buffer(buf, maxAviFrameBytes)
+// ReadFrame reads the next AVI frame.
+func (afr *AviFrameReader) ReadFrame() ([]byte, error) {
+	var frameBuffer bytes.Buffer
+	for {
+		data, err := afr.bufReader.Peek(maxAviFrameBytes)
+		if err != nil && err != io.EOF {
+			return nil, err
+		}
+		index := bytes.Index(data, frameDelim)
+		if index == -1 {
+			if _, err := frameBuffer.ReadFrom(afr.bufReader); err != nil && err != io.EOF {
+				return nil, err
+			}
+			continue
+		}
 
-	return r
+		frameBuffer.Write(data[:index+len(frameDelim)])
+		if _, err := afr.bufReader.Discard(index + len(frameDelim)); err != nil {
+			return nil, err
+		}
+		return frameBuffer.Bytes(), nil
+	}
 }
 
 // AnalyzeFrames analyzes the frames in the given file,
@@ -68,38 +77,42 @@ func AnalyzeFrames(ctx context.Context, inputFile io.Reader,
 
 	defer close(errorChan)
 
-	r := AviScanner(inputFile)
+	afr := NewAviFrameReader(inputFile)
 loop:
 	for {
 		select {
 		case <-ctx.Done():
 			break loop
 		default:
-			if r.Scan() {
-				frame := r.Bytes()
-				frameType := Unknown
+			frame, err := afr.ReadFrame()
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+				errorChan <- err
+				return
+			}
+
+			frameType := Unknown
+			if len(frame) >= 8 {
 				if bytes.Compare(frame[5:8], pframePrefix) == 0 {
 					frameType = PFrame
 				} else if bytes.Compare(frame[5:8], iframePrefix) == 0 {
 					frameType = IFrame
 				}
-
-				framesChan <- frameType
-			} else {
-				if err := r.Err(); err != nil {
-					errorChan <- err
-				}
-				return
 			}
+
+			framesChan <- frameType
 		}
 	}
 }
 
-type VideoTime struct {
-	Time  time.Duration
-	Frame uint64
-	Fps   float64
+// Other functions and types...
 
+type VideoTime struct {
+	Time     time.Duration
+	Frame    uint64
+	Fps      float64
 	timecode string
 }
 

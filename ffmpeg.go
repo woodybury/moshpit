@@ -190,9 +190,20 @@ read:
 }
 
 func readLinesToChannel(reader io.Reader, lineChan chan<- string) {
-	r := bufio.NewScanner(reader)
-	for r.Scan() {
-		lineChan <- r.Text()
-	}
-	close(lineChan)
+    bufReader := bufio.NewReader(reader)
+    for {
+        line, err := bufReader.ReadString('\n')
+        if err != nil {
+            if err == io.EOF {
+                if len(line) > 0 {
+                    lineChan <- line
+                }
+                close(lineChan)
+                return
+            }
+            close(lineChan)
+            return
+        }
+        lineChan <- line
+    }
 }
