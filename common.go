@@ -54,5 +54,8 @@ func (ar *AviReader) ReadFrame() ([]byte, error) {
 		}
 		return frameBuffer.Bytes(), nil
 	}
-	return frameBuffer.Bytes(), nil
+	if frameBuffer.Len() > 0 {
+		return frameBuffer.Bytes(), nil
+	}
+	return nil, io.EOF
 }
