@@ -31,36 +31,38 @@ var frameDelim = []byte{48, 48, 100, 99} // ASCII 00dc
 var iframePrefix = []byte{0, 1, 176} // hex 0x0001B0
 var pframePrefix = []byte{0, 1, 182} // hex 0x0001B6
 
-// AviFrameReader reads AVI frames from an io.Reader.
-type AviFrameReader struct {
+// frameDelimSplitFunc is no longer needed
+
+// AviReader reads AVI frames from an io.Reader.
+type AviReader struct {
 	bufReader *bufio.Reader
 }
 
-// NewAviFrameReader creates a new AviFrameReader.
-func NewAviFrameReader(reader io.Reader) *AviFrameReader {
-	return &AviFrameReader{
+// AviScanner creates a new AviReader.
+func AviScanner(reader io.Reader) *AviReader {
+	return &AviReader{
 		bufReader: bufio.NewReader(reader),
 	}
 }
 
 // ReadFrame reads the next AVI frame.
-func (afr *AviFrameReader) ReadFrame() ([]byte, error) {
+func (ar *AviReader) ReadFrame() ([]byte, error) {
 	var frameBuffer bytes.Buffer
 	for {
-		data, err := afr.bufReader.Peek(maxAviFrameBytes)
+		data, err := ar.bufReader.Peek(maxAviFrameBytes)
 		if err != nil && err != io.EOF {
 			return nil, err
 		}
 		index := bytes.Index(data, frameDelim)
 		if index == -1 {
-			if _, err := frameBuffer.ReadFrom(afr.bufReader); err != nil && err != io.EOF {
+			if _, err := frameBuffer.ReadFrom(ar.bufReader); err != nil && err != io.EOF {
 				return nil, err
 			}
 			continue
 		}
 
 		frameBuffer.Write(data[:index+len(frameDelim)])
-		if _, err := afr.bufReader.Discard(index + len(frameDelim)); err != nil {
+		if _, err := ar.bufReader.Discard(index + len(frameDelim)); err != nil {
 			return nil, err
 		}
 		return frameBuffer.Bytes(), nil
@@ -77,14 +79,14 @@ func AnalyzeFrames(ctx context.Context, inputFile io.Reader,
 
 	defer close(errorChan)
 
-	afr := NewAviFrameReader(inputFile)
+	ar := AviScanner(inputFile)
 loop:
 	for {
 		select {
 		case <-ctx.Done():
 			break loop
 		default:
-			frame, err := afr.ReadFrame()
+			frame, err := ar.ReadFrame()
 			if err != nil {
 				if err == io.EOF {
 					break
@@ -106,8 +108,6 @@ loop:
 		}
 	}
 }
-
-// Other functions and types...
 
 type VideoTime struct {
 	Time     time.Duration
