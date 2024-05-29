@@ -6,10 +6,8 @@ import (
 	"io"
 )
 
-const (
-	// we assume that an AVI frame is never larger than 1MB
-	maxAviFrameBytes = 1024 * 1024
-)
+// we assume that an AVI frame is never larger than 10MB for 4K video at 60fps
+const maxAviFrameBytes = 10 * 1024 * 1024
 
 // the AVI frame delimiter
 var (
@@ -23,10 +21,10 @@ type AviReader struct {
 	bufReader *bufio.Reader
 }
 
-// AviScanner creates a new AviReader.
+// AviScanner creates a new AviReader with an increased buffer size.
 func AviScanner(reader io.Reader) *AviReader {
 	return &AviReader{
-		bufReader: bufio.NewReader(reader),
+		bufReader: bufio.NewReaderSize(reader, maxAviFrameBytes),
 	}
 }
 
@@ -40,8 +38,12 @@ func (ar *AviReader) ReadFrame() ([]byte, error) {
 		}
 		index := bytes.Index(data, frameDelim)
 		if index == -1 {
-			if _, err := frameBuffer.ReadFrom(ar.bufReader); err != nil && err != io.EOF {
+			n, err := frameBuffer.ReadFrom(ar.bufReader)
+			if err != nil && err != io.EOF {
 				return nil, err
+			}
+			if n == 0 && err == io.EOF {
+				break
 			}
 			continue
 		}
@@ -52,4 +54,5 @@ func (ar *AviReader) ReadFrame() ([]byte, error) {
 		}
 		return frameBuffer.Bytes(), nil
 	}
+	return frameBuffer.Bytes(), nil
 }
