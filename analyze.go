@@ -31,8 +31,6 @@ var frameDelim = []byte{48, 48, 100, 99} // ASCII 00dc
 var iframePrefix = []byte{0, 1, 176} // hex 0x0001B0
 var pframePrefix = []byte{0, 1, 182} // hex 0x0001B6
 
-// frameDelimSplitFunc is no longer needed
-
 // AviReader reads AVI frames from an io.Reader.
 type AviReader struct {
 	bufReader *bufio.Reader
